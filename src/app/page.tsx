@@ -1,103 +1,219 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { analyzeVideo, VideoAnalysisResult, isValidYouTubeUrl, VideoSource } from "@/lib/gemini";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [youtubeUrl, setYoutubeUrl] = useState<string>("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<VideoAnalysisResult | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [inputMethod, setInputMethod] = useState<"file" | "youtube">("file");
+  const [urlError, setUrlError] = useState<string | null>(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && file.type.startsWith("video/")) {
+      setVideoFile(file);
+      setAnalysisResult(null);
+    }
+  };
+
+  const handleYoutubeUrlChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const url = event.target.value;
+    setYoutubeUrl(url);
+    setUrlError(null);
+    
+    if (url && !isValidYouTubeUrl(url)) {
+      setUrlError("Please enter a valid YouTube URL");
+    }
+  };
+
+  const handleAnalyze = async () => {
+    if (inputMethod === "file" && !videoFile) return;
+    if (inputMethod === "youtube" && (!youtubeUrl || !isValidYouTubeUrl(youtubeUrl))) return;
+
+    setIsAnalyzing(true);
+    setUploadProgress(0);
+
+    // Simulate upload progress
+    const progressInterval = setInterval(() => {
+      setUploadProgress((prev) => {
+        if (prev >= 90) {
+          clearInterval(progressInterval);
+          return 90;
+        }
+        return prev + 10;
+      });
+    }, 500);
+
+    try {
+      const videoSource: VideoSource = inputMethod === "file" 
+        ? { type: "file", data: videoFile as File }
+        : { type: "youtube", data: youtubeUrl };
+        
+      const result = await analyzeVideo(videoSource);
+      setAnalysisResult(result);
+    } catch (error) {
+      console.error("Error analyzing video:", error);
+      setAnalysisResult({
+        summary: "",
+        error: "Failed to analyze video. Please try again.",
+      });
+    } finally {
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      setIsAnalyzing(false);
+    }
+  };
+
+  return (
+    <main className="min-h-screen p-8 bg-gradient-to-b from-slate-900 to-slate-800">
+      <div className="max-w-4xl mx-auto space-y-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <h1 className="text-4xl font-bold text-white mb-2">Video Analysis with Gemini Vision</h1>
+          <p className="text-slate-300">Upload a video or provide a YouTube URL to analyze its contents.</p>
+        </motion.div>
+
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader>
+            <CardTitle className="text-white">Video Source</CardTitle>
+            <CardDescription className="text-slate-400">
+              Choose how you want to provide the video for analysis
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex space-x-4 mb-4">
+              <Button 
+                variant={inputMethod === "file" ? "default" : "outline"} 
+                onClick={() => setInputMethod("file")}
+                className={inputMethod === "file" ? "bg-blue-600 hover:bg-blue-700" : "border-slate-600 text-slate-300"}
+              >
+                Upload File
+              </Button>
+              <Button 
+                variant={inputMethod === "youtube" ? "default" : "outline"} 
+                onClick={() => setInputMethod("youtube")}
+                className={inputMethod === "youtube" ? "bg-blue-600 hover:bg-blue-700" : "border-slate-600 text-slate-300"}
+              >
+                YouTube URL
+              </Button>
+            </div>
+
+            {inputMethod === "file" ? (
+              <div className="space-y-2">
+                <Label htmlFor="video" className="text-slate-300">
+                  Video File
+                </Label>
+                <input
+                  id="video"
+                  type="file"
+                  accept="video/*"
+                  onChange={handleFileChange}
+                  className="block w-full text-sm text-slate-300
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-full file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-slate-700 file:text-slate-300
+                    hover:file:bg-slate-600"
+                />
+                {videoFile && (
+                  <p className="text-slate-300 mt-2">Selected file: {videoFile.name}</p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="youtube-url" className="text-slate-300">
+                  YouTube URL
+                </Label>
+                <Input
+                  id="youtube-url"
+                  type="text"
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  value={youtubeUrl}
+                  onChange={handleYoutubeUrlChange}
+                  className="bg-slate-700 border-slate-600 text-slate-300"
+                />
+                {urlError && (
+                  <p className="text-red-400 text-sm mt-1">{urlError}</p>
+                )}
+              </div>
+            )}
+
+            <Button
+              onClick={handleAnalyze}
+              disabled={isAnalyzing || (inputMethod === "file" ? !videoFile : !youtubeUrl || !!urlError)}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+            >
+              {isAnalyzing ? "Analyzing..." : "Analyze Video"}
+            </Button>
+
+            {isAnalyzing && (
+              <div className="space-y-2">
+                <Progress value={uploadProgress} className="bg-slate-700" />
+                <p className="text-sm text-slate-400">Processing video...</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {analysisResult && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+            <Card className="bg-slate-800 border-slate-700">
+              <CardHeader>
+                <CardTitle className="text-white">Analysis Results</CardTitle>
+                <CardDescription className="text-slate-400">
+                  Here&apos;s what Gemini Vision found in your video
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {analysisResult.error ? (
+                  <p className="text-red-400">{analysisResult.error}</p>
+                ) : (
+                  <Tabs defaultValue="summary" className="w-full">
+                    <TabsList className="grid grid-cols-3 mb-4 bg-slate-700">
+                      <TabsTrigger value="summary" className="data-[state=active]:bg-slate-600">Summary</TabsTrigger>
+                      <TabsTrigger value="transcription" className="data-[state=active]:bg-slate-600">Transcription</TabsTrigger>
+                      <TabsTrigger value="visual" className="data-[state=active]:bg-slate-600">Visual Description</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="summary" className="mt-0">
+                      <div className="p-4 bg-slate-700 rounded-md">
+                        <p className="text-slate-300 whitespace-pre-wrap">{analysisResult.summary}</p>
+                      </div>
+                    </TabsContent>
+                    <TabsContent value="transcription" className="mt-0">
+                      <div className="p-4 bg-slate-700 rounded-md">
+                        <p className="text-slate-300 whitespace-pre-wrap">{analysisResult.transcription || "No transcription available."}</p>
+                      </div>
+                    </TabsContent>
+                    <TabsContent value="visual" className="mt-0">
+                      <div className="p-4 bg-slate-700 rounded-md">
+                        <p className="text-slate-300 whitespace-pre-wrap">{analysisResult.visualDescription || "No visual description available."}</p>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </div>
+    </main>
   );
 }
