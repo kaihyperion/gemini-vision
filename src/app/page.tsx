@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function Home() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -18,6 +19,9 @@ export default function Home() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [inputMethod, setInputMethod] = useState<"file" | "youtube">("file");
   const [urlError, setUrlError] = useState<string | null>(null);
+  const [customPrompt, setCustomPrompt] = useState<string>("");
+  const [includeTranscription, setIncludeTranscription] = useState<boolean>(true);
+  const [includeVisualDescription, setIncludeVisualDescription] = useState<boolean>(true);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -57,8 +61,20 @@ export default function Home() {
 
     try {
       const videoSource: VideoSource = inputMethod === "file" 
-        ? { type: "file", data: videoFile as File }
-        : { type: "youtube", data: youtubeUrl };
+        ? { 
+            type: "file", 
+            data: videoFile as File, 
+            customPrompt: customPrompt || undefined,
+            includeTranscription,
+            includeVisualDescription
+          }
+        : { 
+            type: "youtube", 
+            data: youtubeUrl, 
+            customPrompt: customPrompt || undefined,
+            includeTranscription,
+            includeVisualDescription
+          };
         
       const result = await analyzeVideo(videoSource);
       setAnalysisResult(result);
@@ -152,6 +168,51 @@ export default function Home() {
               </div>
             )}
 
+            <div className="space-y-2">
+              <Label htmlFor="custom-prompt" className="text-slate-300">
+                Custom Analysis Prompt (Optional)
+              </Label>
+              <Input
+                id="custom-prompt"
+                type="text"
+                placeholder="Enter your custom prompt for video analysis..."
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value)}
+                className="bg-slate-700 border-slate-600 text-slate-300"
+              />
+              <p className="text-sm text-slate-400">
+                Leave empty to use the default analysis prompt
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <Label className="text-slate-300">Analysis Options</Label>
+              <div className="flex flex-col space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="transcription" 
+                    checked={includeTranscription}
+                    onCheckedChange={(checked: boolean | "indeterminate") => setIncludeTranscription(checked === true)}
+                    className="border-slate-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                  />
+                  <Label htmlFor="transcription" className="text-slate-300">
+                    Include Transcription
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="visual-description" 
+                    checked={includeVisualDescription}
+                    onCheckedChange={(checked: boolean | "indeterminate") => setIncludeVisualDescription(checked === true)}
+                    className="border-slate-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                  />
+                  <Label htmlFor="visual-description" className="text-slate-300">
+                    Include Visual Description
+                  </Label>
+                </div>
+              </div>
+            </div>
+
             <Button
               onClick={handleAnalyze}
               disabled={isAnalyzing || (inputMethod === "file" ? !videoFile : !youtubeUrl || !!urlError)}
@@ -189,8 +250,8 @@ export default function Home() {
                   <Tabs defaultValue="summary" className="w-full">
                     <TabsList className="grid grid-cols-3 mb-4 bg-slate-700">
                       <TabsTrigger value="summary" className="data-[state=active]:bg-slate-600">Summary</TabsTrigger>
-                      <TabsTrigger value="transcription" className="data-[state=active]:bg-slate-600">Transcription</TabsTrigger>
-                      <TabsTrigger value="visual" className="data-[state=active]:bg-slate-600">Visual Description</TabsTrigger>
+                      <TabsTrigger value="transcription" className="data-[state=active]:bg-slate-600" disabled={!includeTranscription}>Transcription</TabsTrigger>
+                      <TabsTrigger value="visual" className="data-[state=active]:bg-slate-600" disabled={!includeVisualDescription}>Visual Description</TabsTrigger>
                     </TabsList>
                     <TabsContent value="summary" className="mt-0">
                       <div className="p-4 bg-slate-700 rounded-md">
