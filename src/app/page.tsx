@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { analyzeVideo, VideoAnalysisResult, isValidYouTubeUrl, VideoSource } from "@/lib/gemini";
+import { analyzeVideo, VideoAnalysisResult, isValidYouTubeUrl, VideoSource, askFollowUpQuestion } from "@/lib/gemini";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SendIcon } from "lucide-react";
 
 export default function Home() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -20,8 +21,13 @@ export default function Home() {
   const [inputMethod, setInputMethod] = useState<"file" | "youtube">("file");
   const [urlError, setUrlError] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState<string>("");
-  const [includeTranscription, setIncludeTranscription] = useState<boolean>(true);
-  const [includeVisualDescription, setIncludeVisualDescription] = useState<boolean>(true);
+  const [includeTranscription, setIncludeTranscription] = useState<boolean>(false);
+  const [includeVisualDescription, setIncludeVisualDescription] = useState<boolean>(false);
+  const [includeShotAnalysis, setIncludeShotAnalysis] = useState<boolean>(false);
+  const [includeSummary, setIncludeSummary] = useState<boolean>(false);
+  const [followUpQuestion, setFollowUpQuestion] = useState<string>("");
+  const [isAskingQuestion, setIsAskingQuestion] = useState<boolean>(false);
+  const [chatHistory, setChatHistory] = useState<Array<{ role: "user" | "assistant", content: string }>>([]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -47,6 +53,7 @@ export default function Home() {
 
     setIsAnalyzing(true);
     setUploadProgress(0);
+    setChatHistory([]); // Reset chat history when analyzing a new video
 
     // Simulate upload progress
     const progressInterval = setInterval(() => {
@@ -66,18 +73,29 @@ export default function Home() {
             data: videoFile as File, 
             customPrompt: customPrompt || undefined,
             includeTranscription,
-            includeVisualDescription
+            includeVisualDescription,
+            includeShotAnalysis,
+            includeSummary
           }
         : { 
             type: "youtube", 
             data: youtubeUrl, 
             customPrompt: customPrompt || undefined,
             includeTranscription,
-            includeVisualDescription
+            includeVisualDescription,
+            includeShotAnalysis,
+            includeSummary
           };
         
       const result = await analyzeVideo(videoSource);
       setAnalysisResult(result);
+      
+      // Add the initial summary to chat history
+      if (result.summary) {
+        setChatHistory([
+          { role: "assistant", content: result.summary }
+        ]);
+      }
     } catch (error) {
       console.error("Error analyzing video:", error);
       setAnalysisResult({
@@ -88,6 +106,30 @@ export default function Home() {
       clearInterval(progressInterval);
       setUploadProgress(100);
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleAskQuestion = async () => {
+    if (!followUpQuestion.trim() || !analysisResult?.sessionId) return;
+    
+    setIsAskingQuestion(true);
+    
+    // Add user question to chat history
+    setChatHistory(prev => [...prev, { role: "user", content: followUpQuestion }]);
+    
+    try {
+      const response = await askFollowUpQuestion(analysisResult.sessionId, followUpQuestion);
+      
+      // Add assistant response to chat history
+      setChatHistory(prev => [...prev, { role: "assistant", content: response }]);
+      
+      // Clear the question input
+      setFollowUpQuestion("");
+    } catch (error) {
+      console.error("Error asking follow-up question:", error);
+      setChatHistory(prev => [...prev, { role: "assistant", content: "Failed to get a response. Please try again." }]);
+    } finally {
+      setIsAskingQuestion(false);
     }
   };
 
@@ -190,6 +232,17 @@ export default function Home() {
               <div className="flex flex-col space-y-2">
                 <div className="flex items-center space-x-2">
                   <Checkbox 
+                    id="summary" 
+                    checked={includeSummary}
+                    onCheckedChange={(checked: boolean | "indeterminate") => setIncludeSummary(checked === true)}
+                    className="border-slate-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                  />
+                  <Label htmlFor="summary" className="text-slate-300">
+                    Include Summary
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
                     id="transcription" 
                     checked={includeTranscription}
                     onCheckedChange={(checked: boolean | "indeterminate") => setIncludeTranscription(checked === true)}
@@ -208,6 +261,17 @@ export default function Home() {
                   />
                   <Label htmlFor="visual-description" className="text-slate-300">
                     Include Visual Description
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="shot-analysis" 
+                    checked={includeShotAnalysis}
+                    onCheckedChange={(checked: boolean | "indeterminate") => setIncludeShotAnalysis(checked === true)}
+                    className="border-slate-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                  />
+                  <Label htmlFor="shot-analysis" className="text-slate-300">
+                    Include Shot Analysis
                   </Label>
                 </div>
               </div>
@@ -248,10 +312,11 @@ export default function Home() {
                   <p className="text-red-400">{analysisResult.error}</p>
                 ) : (
                   <Tabs defaultValue="summary" className="w-full">
-                    <TabsList className="grid grid-cols-3 mb-4 bg-slate-700">
+                    <TabsList className="grid grid-cols-4 mb-4 bg-slate-700">
                       <TabsTrigger value="summary" className="data-[state=active]:bg-slate-600">Summary</TabsTrigger>
                       <TabsTrigger value="transcription" className="data-[state=active]:bg-slate-600" disabled={!includeTranscription}>Transcription</TabsTrigger>
                       <TabsTrigger value="visual" className="data-[state=active]:bg-slate-600" disabled={!includeVisualDescription}>Visual Description</TabsTrigger>
+                      <TabsTrigger value="shot-analysis" className="data-[state=active]:bg-slate-600" disabled={!includeShotAnalysis}>Shot Analysis</TabsTrigger>
                     </TabsList>
                     <TabsContent value="summary" className="mt-0">
                       <div className="p-4 bg-slate-700 rounded-md">
@@ -268,8 +333,102 @@ export default function Home() {
                         <p className="text-slate-300 whitespace-pre-wrap">{analysisResult.visualDescription || "No visual description available."}</p>
                       </div>
                     </TabsContent>
+                    <TabsContent value="shot-analysis" className="mt-0">
+                      <div className="p-4 bg-slate-700 rounded-md">
+                        {analysisResult.shotAnalysis ? (
+                          <div className="space-y-4">
+                            {analysisResult.shotAnalysis.map((shot, index) => (
+                              <div key={index} className="p-3 bg-slate-600 rounded-md">
+                                <p className="text-slate-300">
+                                  <span className="font-semibold">ID:</span> {shot.uniqueId}<br />
+                                  <span className="font-semibold">Timestamp:</span> {shot.timestamp}<br />
+                                  <span className="font-semibold">Shot Type:</span> {shot.shotType}<br />
+                                  <span className="font-semibold">Frame:</span> {shot.frame}<br />
+                                  <span className="font-semibold">Movement:</span> {shot.movement}<br />
+                                  <span className="font-semibold">Eyeline:</span> {shot.eyeline}<br />
+                                  <span className="font-semibold">Camera:</span> {shot.camera}<br />
+                                  <span className="font-semibold">Angle:</span> {shot.angle}<br />
+                                  <span className="font-semibold">Lens:</span> {shot.lens}<br />
+                                  <span className="font-semibold">Character:</span> {shot.character}<br />
+                                  <span className="font-semibold">Character Actions:</span><br />
+                                  {shot.characterActions.map((action, actionIndex) => (
+                                    <span key={actionIndex} className="ml-4 block">
+                                      {action.character}: {action.action}
+                                    </span>
+                                  ))}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-slate-300">No shot analysis available.</p>
+                        )}
+                      </div>
+                    </TabsContent>
                   </Tabs>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Follow-up Questions Section */}
+            <Card className="bg-slate-800 border-slate-700 mt-6">
+              <CardHeader>
+                <CardTitle className="text-white">Ask Follow-up Questions</CardTitle>
+                <CardDescription className="text-slate-400">
+                  Ask specific questions about the video content
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Chat History */}
+                  <div className="bg-slate-700 rounded-md p-4 max-h-80 overflow-y-auto">
+                    {chatHistory.length === 0 ? (
+                      <p className="text-slate-400 text-center py-4">No conversation yet. Ask a question to get started.</p>
+                    ) : (
+                      <div className="space-y-4">
+                        {chatHistory.map((message, index) => (
+                          <div 
+                            key={index} 
+                            className={`p-3 rounded-md ${
+                              message.role === "user" 
+                                ? "bg-blue-600/20 ml-auto max-w-[80%]" 
+                                : "bg-slate-600/50 mr-auto max-w-[80%]"
+                            }`}
+                          >
+                            <p className="text-slate-300 whitespace-pre-wrap">{message.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Question Input */}
+                  <div className="flex space-x-2">
+                    <Input
+                      placeholder="Ask a question about the video..."
+                      value={followUpQuestion}
+                      onChange={(e) => setFollowUpQuestion(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleAskQuestion();
+                        }
+                      }}
+                      className="bg-slate-700 border-slate-600 text-slate-300"
+                      disabled={isAskingQuestion}
+                    />
+                    <Button 
+                      onClick={handleAskQuestion}
+                      disabled={isAskingQuestion || !followUpQuestion.trim()}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      <SendIcon className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {isAskingQuestion && (
+                    <p className="text-sm text-slate-400">Thinking...</p>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </motion.div>
