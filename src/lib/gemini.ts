@@ -8,9 +8,11 @@ export type VideoAnalysisResult = {
   transcription?: string;
   visualDescription?: string;
   shotAnalysis?: ShotAnalysis[];
+  lipFlapAnalysis?: LipFlapAnalysis[];
   error?: string;
   sessionId?: string; // Session ID for follow-up questions
 };
+
 
 export type ShotAnalysis = {
   uniqueId: string;
@@ -29,6 +31,13 @@ export type ShotAnalysis = {
   }[];
 };
 
+export type LipFlapAnalysis = {
+  timestamp: string; // Format: "[00:00-00:05]"
+  character: string;
+  confidence: number;
+  notes?: string;
+};
+
 export type VideoSource = {
   type: "file" | "youtube";
   data: File | string; // File for upload, string for YouTube URL
@@ -37,6 +46,7 @@ export type VideoSource = {
   includeVisualDescription?: boolean; // Whether to include visual description in the analysis
   includeShotAnalysis?: boolean; // Whether to include shot analysis in the analysis
   includeSummary?: boolean; // Whether to include summary in the analysis
+  includeLipFlapAnalysis?: boolean; // Whether to include lip-flap analysis in the analysis
 };
 
 // Store for active chat sessions
@@ -174,10 +184,37 @@ IMPORTANT: Make sure to:
 3. Include commas between array items
 4. Return ONLY the JSON object with no additional text`;
 
+
+    const lipFlapPrompt = `Analyze this video and identify all instances where characters are speaking based on their lip movements (lip flaps), without considering the audio. For each instance, provide:
+1. The timestamp range in [MM:SS-MM:SS] format (from start to end of the speaking instance)
+2. The character name (or character1, character2, etc. if names are not available)
+3. A confidence score (0-100) indicating how certain you are that the character is speaking
+4. Any additional notes about the lip movement or context
+
+Return the data in the following exact JSON format:
+
+{
+  "lipFlaps": [
+    {
+      "timestamp": "[00:00-00:05]",
+      "character": "character1",
+      "confidence": 95,
+      "notes": "Clear lip movement, character is facing camera directly"
+    }
+  ]
+}
+
+IMPORTANT: Make sure to:
+1. Use double quotes for all property names and string values
+2. Include commas between properties
+3. Include commas between array items
+4. Return ONLY the JSON object with no additional text`;
+
     let summary = "";
     let transcription = "";
     let visualDescription = "";
     let shotAnalysis: ShotAnalysis[] = [];
+    let lipFlapAnalysis: LipFlapAnalysis[] = [];
 
     // Generate summary only if requested
     if (videoSource.includeSummary !== false) {
@@ -250,6 +287,44 @@ IMPORTANT: Make sure to:
       visualDescription = visualResponse.text();
     }
 
+    // Generate lip-flap analysis if requested
+    if (videoSource.includeLipFlapAnalysis) {
+      const lipFlapResult = await model.generateContent([
+        lipFlapPrompt,
+        videoData,
+      ]);
+      const lipFlapResponse = await lipFlapResult.response;
+      try {
+        // Clean the response by removing markdown formatting and any non-JSON text
+        let cleanResponse = lipFlapResponse.text()
+          .replace(/```json\s*/g, '') // Remove ```json
+          .replace(/```\s*/g, '')     // Remove ```
+          .replace(/^\s*|\s*$/g, ''); // Trim whitespace
+
+        // Find the first { and last } to extract just the JSON object
+        const firstBrace = cleanResponse.indexOf('{');
+        const lastBrace = cleanResponse.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) {
+          cleanResponse = cleanResponse.slice(firstBrace, lastBrace + 1);
+        }
+
+        // Fix common JSON formatting issues
+        cleanResponse = cleanResponse
+          .replace(/([{,])\s*([a-zA-Z0-9_]+)\s*:/g, '$1"$2":') // Fix property names
+          .replace(/:\s*([a-zA-Z0-9_-]+)\s*([,}])/g, ':"$1"$2') // Fix string values
+          .replace(/:\s*([a-zA-Z0-9_-]+)\s*$/g, ':"$1"') // Fix last string value
+          .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas
+          .replace(/([{,])\s*([a-zA-Z0-9_]+)\s*:\s*undefined/g, '$1"$2":null'); // Fix undefined values
+
+        const parsedResponse = JSON.parse(cleanResponse);
+        if (parsedResponse && Array.isArray(parsedResponse.lipFlaps)) {
+          lipFlapAnalysis = parsedResponse.lipFlaps;
+        }
+      } catch (error) {
+        console.error("Error parsing lip-flap analysis JSON:", error);
+      }
+    }
+
     // Store the session for follow-up questions
     const sessionId = generateSessionId(videoSource);
     const chat = model.startChat({
@@ -276,6 +351,7 @@ IMPORTANT: Make sure to:
       transcription: transcription || undefined,
       visualDescription: visualDescription || undefined,
       shotAnalysis: shotAnalysis.length > 0 ? shotAnalysis : undefined,
+      lipFlapAnalysis: lipFlapAnalysis.length > 0 ? lipFlapAnalysis : undefined,
       sessionId, // Return the session ID for follow-up questions
     };
   } catch (error) {

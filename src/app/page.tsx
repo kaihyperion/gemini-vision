@@ -24,6 +24,7 @@ export default function Home() {
   const [includeTranscription, setIncludeTranscription] = useState<boolean>(false);
   const [includeVisualDescription, setIncludeVisualDescription] = useState<boolean>(false);
   const [includeShotAnalysis, setIncludeShotAnalysis] = useState<boolean>(false);
+  const [includeLipFlapAnalysis, setIncludeLipFlapAnalysis] = useState<boolean>(false);
   const [includeSummary, setIncludeSummary] = useState<boolean>(false);
   const [followUpQuestion, setFollowUpQuestion] = useState<string>("");
   const [isAskingQuestion, setIsAskingQuestion] = useState<boolean>(false);
@@ -75,6 +76,7 @@ export default function Home() {
             includeTranscription,
             includeVisualDescription,
             includeShotAnalysis,
+            includeLipFlapAnalysis,
             includeSummary
           }
         : { 
@@ -84,6 +86,7 @@ export default function Home() {
             includeTranscription,
             includeVisualDescription,
             includeShotAnalysis,
+            includeLipFlapAnalysis,
             includeSummary
           };
         
@@ -274,6 +277,17 @@ export default function Home() {
                     Include Shot Analysis
                   </Label>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="lip-flap-analysis"
+                    checked={includeLipFlapAnalysis}
+                    onCheckedChange={(checked: boolean | "indeterminate") => setIncludeLipFlapAnalysis(checked === true)}
+                    className="border-slate-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                  />
+                  <Label htmlFor="lip-flap-analysis" className="text-slate-300">
+                    Include Lip Flap Analysis
+                  </Label> 
+                </div>
               </div>
             </div>
 
@@ -312,11 +326,12 @@ export default function Home() {
                   <p className="text-red-400">{analysisResult.error}</p>
                 ) : (
                   <Tabs defaultValue="summary" className="w-full">
-                    <TabsList className="grid grid-cols-4 mb-4 bg-slate-700">
+                    <TabsList className="grid grid-cols-5 mb-4 bg-slate-700">
                       <TabsTrigger value="summary" className="data-[state=active]:bg-slate-600">Summary</TabsTrigger>
                       <TabsTrigger value="transcription" className="data-[state=active]:bg-slate-600" disabled={!includeTranscription}>Transcription</TabsTrigger>
                       <TabsTrigger value="visual" className="data-[state=active]:bg-slate-600" disabled={!includeVisualDescription}>Visual Description</TabsTrigger>
                       <TabsTrigger value="shot-analysis" className="data-[state=active]:bg-slate-600" disabled={!includeShotAnalysis}>Shot Analysis</TabsTrigger>
+                      <TabsTrigger value="lip-flap-analysis" className="data-[state=active]:bg-slate-600" disabled={!includeLipFlapAnalysis}>Lip Flap Analysis</TabsTrigger>
                     </TabsList>
                     <TabsContent value="summary" className="mt-0">
                       <div className="p-4 bg-slate-700 rounded-md">
@@ -362,6 +377,30 @@ export default function Home() {
                           </div>
                         ) : (
                           <p className="text-slate-300">No shot analysis available.</p>
+                        )}
+                      </div>
+                    </TabsContent>
+                    <TabsContent value="lip-flap-analysis" className="mt-0">
+                      <div className="p-4 bg-slate-700 rounded-md">
+                        {analysisResult.lipFlapAnalysis ? (
+                          <div className="space-y-4">
+                            {analysisResult.lipFlapAnalysis.map((lipFlap, index) => (
+                              <div key={index} className="p-3 bg-slate-600 rounded-md">
+                                <p className="text-slate-300">
+                                  <span className="font-semibold">Timestamp:</span> {lipFlap.timestamp}<br />
+                                  <span className="font-semibold">Character:</span> {lipFlap.character}<br />
+                                  <span className="font-semibold">Confidence:</span> {lipFlap.confidence}%<br />
+                                  {lipFlap.notes && (
+                                    <>
+                                      <span className="font-semibold">Notes:</span> {lipFlap.notes}
+                                    </>
+                                  )}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-slate-300">No lip-flap analysis available.</p>
                         )}
                       </div>
                     </TabsContent>
